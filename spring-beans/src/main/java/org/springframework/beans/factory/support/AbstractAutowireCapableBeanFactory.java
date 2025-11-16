@@ -511,6 +511,7 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 		// Make sure bean class is actually resolved at this point, and
 		// clone the bean definition in case of a dynamically resolved Class
 		// which cannot be stored in the shared merged bean definition.
+		// 确保bean可以被实例化, 检查类是否可以被加载
 		Class<?> resolvedClass = resolveBeanClass(mbd, beanName);
 		if (resolvedClass != null && !mbd.hasBeanClass() && mbd.getBeanClassName() != null) {
 			mbdToUse = new RootBeanDefinition(mbd);
@@ -519,6 +520,7 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 
 		// Prepare method overrides.
 		try {
+			// @Lookup相关的方法替换处理的校验和准备
 			mbdToUse.prepareMethodOverrides();
 		}
 		catch (BeanDefinitionValidationException ex) {
@@ -528,6 +530,7 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 
 		try {
 			// Give BeanPostProcessors a chance to return a proxy instead of the target bean instance.
+			// 如果有BeanPostProcessor, 这里返回一个proxy
 			Object bean = resolveBeforeInstantiation(beanName, mbdToUse);
 			if (bean != null) {
 				return bean;
@@ -539,6 +542,7 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 		}
 
 		try {
+			// 创建bean的调用
 			Object beanInstance = doCreateBean(beanName, mbdToUse, args);
 			if (logger.isTraceEnabled()) {
 				logger.trace("Finished creating instance of bean '" + beanName + "'");
@@ -574,11 +578,14 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 			throws BeanCreationException {
 
 		// Instantiate the bean.
+		// 持有bean的wrapper引用
 		BeanWrapper instanceWrapper = null;
+		// 清除同名bean的factoryBean缓存
 		if (mbd.isSingleton()) {
 			instanceWrapper = this.factoryBeanInstanceCache.remove(beanName);
 		}
 		if (instanceWrapper == null) {
+			// 实例化
 			instanceWrapper = createBeanInstance(beanName, mbd, args);
 		}
 		Object bean = instanceWrapper.getWrappedInstance();
@@ -591,6 +598,7 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 		synchronized (mbd.postProcessingLock) {
 			if (!mbd.postProcessed) {
 				try {
+					// 创建对象之后, 注入属性前, 通过这个方法修改BD的定义, 如Autowire等注解的处理
 					applyMergedBeanDefinitionPostProcessors(mbd, beanType, beanName);
 				}
 				catch (Throwable ex) {
@@ -610,13 +618,22 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 				logger.trace("Eagerly caching bean '" + beanName +
 						"' to allow for resolving potential circular references");
 			}
+			// 早期暴露
 			addSingletonFactory(beanName, () -> getEarlyBeanReference(beanName, mbd, bean));
 		}
 
 		// Initialize the bean instance.
+		// 初始设置: 默认要最终暴露的bean就是实例化的这个bean
 		Object exposedObject = bean;
 		try {
+			// 对bean的属性填充, 初始化, 依赖注入
 			populateBean(beanName, mbd, instanceWrapper);
+			// xxxAware等接口调用, 调用beanPostProcessor的前置处理(postProcessBeforeInitialization),
+			// postConstruct注解方法执行?? 在哪执行的
+			// 调用自定义的初始化方法(InitializingBean的afterPropertiesSet), 通过反射调用注解或xml指定的初始化方法
+			// 执行beanPostProcessor的后置处理postProcessAfterInitialization
+			// note: 最后这一步有AbstractAutoProxyCreator的子类这些postProcessor, 这是AOP的核心, 检查bean是否有匹配的切面
+			// 对于普通bean 返回原始的对象, 如果是需要AOP的对象, 返回代理对象, 原始对象可能被任意一个PostProcessor替换
 			exposedObject = initializeBean(beanName, exposedObject, mbd);
 		}
 		catch (Throwable ex) {
@@ -628,21 +645,29 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 						mbd.getResourceDescription(), beanName, "Initialization of bean failed", ex);
 			}
 		}
-
+		// 早期暴露
 		if (earlySingletonExposure) {
+			// 获取早期暴露的bean
 			Object earlySingletonReference = getSingleton(beanName, false);
 			if (earlySingletonReference != null) {
+				// 如果是同一个对象, 说明没有被代理, 直接使用这个早期对象作为最终暴露的对象
 				if (exposedObject == bean) {
 					exposedObject = earlySingletonReference;
 				}
+				// 配置项(默认false): 当bean被包装时(如AOP代理), 是否允许注入原始bean到其他bean中
+				// hasDependentBean是判断是否有依赖这个bean的其他bean
 				else if (!this.allowRawInjectionDespiteWrapping && hasDependentBean(beanName)) {
+					// 依赖这个bean的其他bean
 					String[] dependentBeans = getDependentBeans(beanName);
 					Set<String> actualDependentBeans = new LinkedHashSet<>(dependentBeans.length);
 					for (String dependentBean : dependentBeans) {
+						// 检查并移除仅用于类型检查的临时Bean
 						if (!removeSingletonIfCreatedForTypeCheckOnly(dependentBean)) {
+							// 移除成功, 则说明有依赖这个bean的
 							actualDependentBeans.add(dependentBean);
 						}
 					}
+					// 如果存在依赖这个bean的, 有不允许注入原始bean, 则抛出异常
 					if (!actualDependentBeans.isEmpty()) {
 						throw new BeanCurrentlyInCreationException(beanName,
 								"Bean with name '" + beanName + "' has been injected into other beans [" +
@@ -658,6 +683,7 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 
 		// Register bean as disposable.
 		try {
+			// 注册bean的销毁调用(DisposableBean接口/@PreDestroy的方法/xml指定destroy-method的方法)
 			registerDisposableBeanIfNecessary(beanName, bean, mbd);
 		}
 		catch (BeanDefinitionValidationException ex) {

@@ -119,15 +119,19 @@ public abstract class AbstractRefreshableApplicationContext extends AbstractAppl
 	 */
 	@Override
 	protected final void refreshBeanFactory() throws BeansException {
+		// refresh()方法调用的第二步: 加载或创建bean factory
 		if (hasBeanFactory()) {
+			// 如果已经创建了beanFactory, 则销毁并关闭它
 			destroyBeans();
 			closeBeanFactory();
 		}
 		try {
+			// 创建beanFactory
 			DefaultListableBeanFactory beanFactory = createBeanFactory();
 			beanFactory.setSerializationId(getId());
 			beanFactory.setApplicationStartup(getApplicationStartup());
 			customizeBeanFactory(beanFactory);
+			// 加载BeanDefinition: 子类各自实现, 如xml加载, 注解加载
 			loadBeanDefinitions(beanFactory);
 			this.beanFactory = beanFactory;
 		}
@@ -195,6 +199,7 @@ public abstract class AbstractRefreshableApplicationContext extends AbstractAppl
 	 * @see org.springframework.beans.factory.support.DefaultListableBeanFactory#setAllowRawInjectionDespiteWrapping
 	 */
 	protected DefaultListableBeanFactory createBeanFactory() {
+		// 创建DefaultListableBeanFactory; 根据parent的容器类型来确定父容器
 		return new DefaultListableBeanFactory(getInternalParentBeanFactory());
 	}
 
@@ -230,6 +235,7 @@ public abstract class AbstractRefreshableApplicationContext extends AbstractAppl
 	 * @see org.springframework.beans.factory.support.PropertiesBeanDefinitionReader
 	 * @see org.springframework.beans.factory.xml.XmlBeanDefinitionReader
 	 */
+	// NOTE(Kita Ikuyo): 2025/11/14 抽象实现, 具体操作委托子类实现
 	protected abstract void loadBeanDefinitions(DefaultListableBeanFactory beanFactory)
 			throws BeansException, IOException;
 

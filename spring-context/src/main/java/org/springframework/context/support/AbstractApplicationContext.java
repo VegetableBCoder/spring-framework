@@ -550,47 +550,98 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 		return this.applicationListeners;
 	}
 
+	/**
+	 * spring 容器启动核心方法
+	 *
+	 * @throws BeansException
+	 * @throws IllegalStateException
+	 */
 	@Override
 	public void refresh() throws BeansException, IllegalStateException {
 		synchronized (this.startupShutdownMonitor) {
 			StartupStep contextRefresh = this.applicationStartup.start("spring.context.refresh");
-
+			// 1. 准备工作: 加载Environment对象, 为@Value注解等注入值
+			//     systemProperties java环境变量
+			//     systemEnvironment 系统环境变量
+			//     PropertySource    自定义的变量, 如从yaml中加载的
 			// Prepare this context for refreshing.
 			prepareRefresh();
 
+			// 2. 获取或者创建BeanFactory, 启动子类的refreshBeanFactory, 加载一些内置的BeanDefinition
+			//     ConfigurationClassPostProcessor 配置类解析
+			//     AutowiredAnnotationBeanPostProcessor 自动装配的注解
+			//     RequiredAnnotationBeanPostProcessor
+			//     CommonAnnotationBeanPostProcessor
+			//     EventListenerMethodProcessor
+			//     DefaultEventListenerFactory
 			// Tell the subclass to refresh the internal bean factory.
 			ConfigurableListableBeanFactory beanFactory = obtainFreshBeanFactory();
+
+			// 3. 进一步完善BeanFactory的属性, 添加一些BeanPostProcessor
+			//      beanExpressionResolver spEL解析
+			//      propertyEditorRegistrars  注册类型转换器
+			//      beanPostProcessors        后置处理器合集, 这里会加两个 ApplicationContextAwareProcessor 和 ApplicationListenerDetector
 
 			// Prepare the bean factory for use in this context.
 			prepareBeanFactory(beanFactory);
 
 			try {
 				// Allows post-processing of the bean factory in context subclasses.
+				// 4. 空方法, 留给子类自己注册scope, 比如WebMVC就注册了REQUEST SESSION APPLICATION作用域来控制相关bean的生命周期
 				postProcessBeanFactory(beanFactory);
 
 				StartupStep beanPostProcess = this.applicationStartup.start("spring.context.beans.post-process");
 				// Invoke factory processors registered as beans in the context.
+				// 5. 调用BeanFactory后置处理器
+				//    实例化所有BeanDefinitionRegistryPostProcessor, 调用它们的postProcessBeanDefinitionRegistry()
+				//    实例化所有BeanFactoryPostProcessor, 调用它们的postProcesBeanFactory()
+				//         可以补充, 修改BeanDefinition, 比如:
+				//         ConfigurationClassPostProcessor 解析  @PropertySource @ComponentScan  @Import  @ImportSource @Configuration, @Bean等注解
+				//         PropertySourcesPlaceHolderConfigurer可以处理占位符 ${xxx},将其替换为真实配置值
 				invokeBeanFactoryPostProcessors(beanFactory);
 				// Register bean processors that intercept bean creation.
+				// 6. 实例化beanPostProcessor, 只实例化, 没有执行哦!!!
+				//    如 @AutoAnnotationWireBeanPostProcessor @AnnotationAwareAspectJAutoProxyCreator
 				registerBeanPostProcessors(beanFactory);
 				beanPostProcess.end();
 
 				// Initialize message source for this context.
+				// 7. 添加messageSource, 实现国际化功能(如果factory没有messageSource这个bean, 使用空实现就行)
 				initMessageSource();
 
 				// Initialize event multicaster for this context.
+				// 8. 添加事件广播(把事件发给监听器)
 				initApplicationEventMulticaster();
 
 				// Initialize other special beans in specific context subclasses.
+				// 9. 空实现, 给子类留的扩展点 springboot容器在这准备webserver
 				onRefresh();
 
 				// Check for listener beans and register them.
+				// 10. 注册事件监听器, applicationEventListener
 				registerListeners();
 
 				// Instantiate all remaining (non-lazy-init) singletons.
+				// 11. 初始化所有非@Lazy的单例Bean
+				//     创建bean实例,
+				//     populateBean 设置属性
+				//     initializeBean 初始化
+				//         执行BeanNameAware, BeanFactoryAware等相关方法
+				//         执行beanPostProcessor的postProcessBeforeBeanInitialization()方法
+				//         执行InitializationBean的afterPropertiesSet方法
+				//         执行自定义的init方法 执行beanPostProcessor的postProcessAfterBeanInitialization()方法
+				//     所有bean都初始化完成之后 会触发实现了 SmartInitializationSingleton接口的bean的afterSingletonBeanInitiated方法
+				// 这里bean加载过程中使用到了三级缓存机制来解决循环以来问题
+				//     一级缓存: 存放完全实例化, 初始化完成的bean(可以直接使用的bean)
+				//     二级缓存: 存放bean早期引用, 此时属性尚未装配完成
+				//     三级缓存: 存放实例化完成的ObjectFactory
+				// 除了三级缓存机制外还有两个缓存:
+				//     singletonCurrentlyCreation: 每个bean在创建过程中存在在这里 完成之后就移除
+				//     alreadyCreated: 存放至少要被创建一次的bean, 标记bean是否已经创建完成
 				finishBeanFactoryInitialization(beanFactory);
 
 				// Last step: publish corresponding event.
+				// 添加生命周期管理器, 用于控制容器内需要进行生命周期管理的bean
 				finishRefresh();
 			}
 

@@ -139,6 +139,7 @@ public class FileSystemXmlApplicationContext extends AbstractXmlApplicationConte
 		super(parent);
 		setConfigLocations(configLocations);
 		if (refresh) {
+			// NOTE(Kita Ikuyo): 2025/11/14 启动核心容器加载过程
 			refresh();
 		}
 	}
@@ -155,6 +156,7 @@ public class FileSystemXmlApplicationContext extends AbstractXmlApplicationConte
 	 */
 	@Override
 	protected Resource getResourceByPath(String path) {
+		// NOTE(Kita Ikuyo): 2025/11/14 基于文件系统的Resource实现， 构造FileSystemResource对象， 实现从文件加载BeanDefinition
 		if (path.startsWith("/")) {
 			path = path.substring(1);
 		}
