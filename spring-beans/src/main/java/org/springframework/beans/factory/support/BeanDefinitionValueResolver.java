@@ -329,6 +329,7 @@ class BeanDefinitionValueResolver {
 					resolvedName = String.valueOf(doEvaluate(ref.getBeanName()));
 					bean = this.beanFactory.getBean(resolvedName);
 				}
+				// 注册依赖关系
 				this.beanFactory.registerDependentBean(resolvedName, this.beanName);
 			}
 			if (bean instanceof NullBean) {
